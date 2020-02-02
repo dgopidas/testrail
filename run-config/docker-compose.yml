@@ -1,10 +1,3 @@
-# An explanation for docker or docker-compose newcomers can be found in the 'docker-compose_documents.yml' file
-# Please also use the official docker documentation as a reference:
-# https://docs.docker.com/    and    https://docs.docker.com/compose/
-
-# Instructions for necessary settings during setup when using docker-compose deployment can be found here:
-# TBD
-
 version: '3'
 services:
   srv:
@@ -32,12 +25,12 @@ services:
     volumes:
       - 'testrail_mysql:/var/lib/mysql'
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-      - ./testrail_backup.sql:/opt/import.sql:ro
+      - ./testrail-dump--2020-01-30.sql:/opt/import.sql:ro
     environment:
-      MYSQL_USER:     "${DB_USER:-testrail}"
-      MYSQL_PASSWORD: "${DB_PWD:-testrail}"
+      MYSQL_USER:     "${DB_USER:-testuser}"
+      MYSQL_PASSWORD: "${DB_PWD:-Genix@123}"
       MYSQL_DATABASE: "${DB_NAME:-testrail}"
-      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PWD:-testrail}"
+      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PWD:-Genix@123}"
 
 networks:
   testrail:
