@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: testmysql
+  labels:
+    app: testrail
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: testrail
+    tier: mysql
+  clusterIP: None
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: testmysqlcfg
+data:
+  init.sql: |
+    create database if not exists testrail collate utf8_bin;
+    GRANT ALL PRIVILEGES ON testrail.* TO 'testuser'@'%' WITH GRANT OPTION;
+    FLUSH PRIVILEGES;
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tr-mysql-pv-claim1
+  labels:
+    app: testrail
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1 # for versions before 1.9.0 use apps/v1beta2
+kind: Deployment
+metadata:
+  name: testmysql
+  labels:
+    app: testrail
+spec:
+  selector:
+    matchLabels:
+      app: testrail
+      tier: mysql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: testrail
+        tier: mysql
+    spec:
+      containers:
+      - image: mysql:5.7
+        name: testmysql
+        ports:
+        - containerPort: 3306
+          name: testmysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: Genix@123
+        volumeMounts:
+        - name: tr-mysql-persistent-storage1
+          mountPath: /var/lib/mysql
+        - name: tr-mysql-persistent-storage2
+          mountPath: /docker-entrypoint-initdb.d/init.sql
+          subPath: init.sql
+      volumes:
+      - name: tr-mysql-persistent-storage1
+        persistentVolumeClaim:
+          claimName: tr-mysql-pv-claim1
+      - name: tr-mysql-persistent-storage2
+        configMap:
+          name: testmysqlcfg
