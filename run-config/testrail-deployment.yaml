@@ -1,0 +1,174 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: testrail-sample-configmap
+data:
+ sample_config.php: |
+    <?php
+
+    /*
+    |--------------------------------------------------------------------
+    | DATABASE CONFIGURATION
+    |--------------------------------------------------------------------
+    |
+    | Please specify the database connection settings below. Currently
+    | supported databases are SQL Server (2008, 2012, 2014, 2016) and
+    | MySQL (5.x).
+    */
+
+    define('DB_DRIVER', 'mysql'); 
+    define('DB_HOSTNAME', '');
+    define('DB_DATABASE', '');
+    define('DB_USERNAME', '');
+    define('DB_PASSWORD', '');
+
+    /*
+    |--------------------------------------------------------------------
+    | DIAGNOSTICS
+    |--------------------------------------------------------------------
+    |
+    | The following settings configure the logging and error behavior
+    | of TestRail.
+    */
+
+    define('LOG_PATH', '/opt/testrail/logs/');
+    define('AUDIT_PATH', '/opt/testrail/audit/');
+
+    /*
+    |--------------------------------------------------------------------
+    | OPTIMIZATIONS
+    |--------------------------------------------------------------------
+    |
+    | You can choose whether to optimize the delivery of style sheet and
+    | javascript files and the handling of language files. The following
+    | optimization settings are available:
+    |
+    | DEPLOY_OPTIMIZE_LANG:   If enabled, TestRail uses a single combined
+    |                         language file named 'all_lang' instead of
+    |                         multiple language files.
+    |
+    | DEPLOY_OPTIMIZE_CSS:    If enabled, a single combined style sheet
+    |                         is served to the clients.
+    |
+    | DEPLOY_OPTIMIZE_JS:     If enabled, a single combined javascript
+    |                         file is served to the clients.
+    */
+
+    define('DEPLOY_OPTIMIZE_LANG', true);
+    define('DEPLOY_OPTIMIZE_CSS', true);
+    define('DEPLOY_OPTIMIZE_JS', true);
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: testrail-config-configmap
+data:
+  startup.sh: |
+   #!/bin/bash
+   set -e
+   mkdir /var/www/testrail/config
+   cp -r /tmp/sample_config.php /var/www/testrail/config/config.php
+   updateConfig() {
+     local key=$1
+     local value=$2
+     sed -i "/$key/s/'[^']*'/'$value'/2" /var/www/testrail/config/config.php
+   }
+
+   updateConfig DB_HOSTNAME          "$TESTRAIL_db_host_name"
+   updateConfig DB_DATABASE          "$TESTRAIL_db_database_name"
+   updateConfig DB_USERNAME          "$TESTRAIL_db_admin_user_name"
+   updateConfig DB_PASSWORD          "$TESTRAIL_db_admin_PASSWORD"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: testrail
+  labels:
+    app: testrail
+spec:
+  ports:
+    - port: 80
+  selector:
+    app: testrail
+    tier: frontend
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tr-pv-claim2
+  labels:
+    app: testrail
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1 # for versions before 1.9.0 use apps/v1beta2
+kind: Deployment
+metadata:
+  name: testrail
+  labels:
+    app: testrail
+spec:
+  selector:
+    matchLabels:
+      app: testrail
+      tier: frontend
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: testrail
+        tier: frontend
+    spec:
+      containers:
+      - image: testrail/apache:latest
+        name: testrail
+        command: ["/bin/sh"]
+        args: ["-c", "/custom-entrypoint.sh; sh /tmp/startup.sh; apache2-foreground"]
+        env:
+        - name: TESTRAIL_db_host_name
+          value: testmysql
+        - name: TESTRAIL_db_database_name
+          value: testrail
+        - name: TESTRAIL_db_admin_user_name
+          value: root
+        - name: TESTRAIL_db_admin_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysecret
+              key: password
+        ports:
+        - containerPort: 80
+          name: testrail
+        volumeMounts:
+        - name: testrail-persistent-storage2
+          mountPath: /opt/testrail
+        - name: testrail-sample-config
+          mountPath: /tmp/sample_config.php
+          subPath: sample_config.php
+          readOnly: false
+        - name: testrail-startup
+          mountPath: /tmp/startup.sh
+          subPath: startup.sh
+          readOnly: false
+      volumes:
+      - name: testrail-persistent-storage2
+        persistentVolumeClaim:
+          claimName: tr-pv-claim2
+      - name: testrail-sample-config
+        configMap:
+          name: testrail-sample-configmap
+          items:
+          - key: sample_config.php
+            path: sample_config.php
+      - name: testrail-startup
+        configMap:
+          name: testrail-config-configmap
+          items:
+          - key: startup.sh
+            path: startup.sh
